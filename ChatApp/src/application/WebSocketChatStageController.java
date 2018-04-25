@@ -10,7 +10,6 @@ import javax.websocket.ClientEndpoint;
 import javax.websocket.CloseReason;
 import javax.websocket.ContainerProvider;
 import javax.websocket.DeploymentException;
-import javax.websocket.EncodeException;
 import javax.websocket.OnClose;
 import javax.websocket.OnError;
 import javax.websocket.OnMessage;
@@ -217,13 +216,9 @@ public class WebSocketChatStageController {
 		}
 
 		public void sendMessage(String message) {
-			try {
-				System.out.println("Message was sent");
+			System.out.println("Message was sent");
 
-				session.getBasicRemote().sendObject(new TextMessage(message, userName));
-			} catch (IOException | EncodeException ex) {
-				ex.printStackTrace();
-			}
+			session.getAsyncRemote().sendObject(new TextMessage(message, userName));
 		}
 
 		public void sendMessage(File file) {
@@ -233,8 +228,8 @@ public class WebSocketChatStageController {
 				String fileName = file.getName();
 				byte[] fileBytes = Files.readAllBytes(file.toPath());
 
-				session.getBasicRemote().sendObject(new FileMessage(fileName, fileBytes, userName));
-			} catch (IOException | EncodeException ex) {
+				session.getAsyncRemote().sendObject(new FileMessage(fileName, fileBytes, userName));
+			} catch (IOException ex) {
 				ex.printStackTrace();
 			}
 		}

@@ -35,14 +35,14 @@ public class WebSocketEndpoint {
 
 	@OnMessage
 	public void onMessage(String message, Session session) {
-		try {
-			for (Session oneSession : session.getOpenSessions()) {
+		for (Session oneSession : session.getOpenSessions()) {
+			try {
 				if (oneSession.isOpen()) {
-					oneSession.getBasicRemote().sendText(message);
+					oneSession.getAsyncRemote().sendText(message);
 				}
+			} catch (Exception e) {
+				e.printStackTrace();
 			}
-		} catch (IOException e) {
-			e.printStackTrace();
 		}
 	}
 
