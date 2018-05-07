@@ -10,20 +10,18 @@ import org.jsoup.nodes.Element;
 public class FileMessage extends Message implements Serializable {
 	private static final long serialVersionUID = -8405923816747510263L;
 	private final String fileName;
-	private final byte[] file;
 
-	public FileMessage(String fileName, byte[] file, String from) {
-		super(from);
+	public FileMessage(String fileName, String from, Integer hash) {
+		super(from, hash);
 		this.fileName = fileName;
-		this.file = file;
+	}
+
+	public FileMessage(String fileName, String from) {
+		this(fileName, from, fileName.hashCode());
 	}
 
 	public String getFileName() {
 		return fileName;
-	}
-
-	public byte[] getFile() {
-		return file;
 	}
 
 	public Element toHTML(Boolean isSender) {
@@ -47,8 +45,13 @@ public class FileMessage extends Message implements Serializable {
 	public String toString() {
 		String jsonString = null;
 		try {
-			jsonString = new JSONObject().put("type", "FileMessage").put("fileName", fileName).put("file", file)
-					.put("sender", getSender()).toString();
+			JSONObject json = new JSONObject().put("type", "FileMessage").put("fileName", fileName);
+			JSONObject superJson = new JSONObject(super.toString());
+			for (String key : JSONObject.getNames(superJson)) {
+				json.put(key, superJson.get(key));
+			}
+			jsonString = json.toString();
+
 		} catch (JSONException e) {
 			e.printStackTrace();
 		}

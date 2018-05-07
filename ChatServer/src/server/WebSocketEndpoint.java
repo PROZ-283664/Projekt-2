@@ -38,7 +38,7 @@ public class WebSocketEndpoint {
 		for (Session oneSession : session.getOpenSessions()) {
 			try {
 				if (oneSession.isOpen()) {
-					oneSession.getAsyncRemote().sendText(message);
+					oneSession.getBasicRemote().sendText(message);
 				}
 			} catch (Exception e) {
 				e.printStackTrace();
@@ -47,15 +47,15 @@ public class WebSocketEndpoint {
 	}
 
 	@OnMessage
-	public void onMessage(ByteBuffer content, boolean last, Session session) {
-		try {
-			for (Session oneSession : session.getOpenSessions()) {
-				if (oneSession.isOpen()) {
-					oneSession.getBasicRemote().sendBinary(content, last);
+	public void onMessage(ByteBuffer content, Session session) {
+		for (Session oneSession : session.getOpenSessions()) {
+			if (oneSession.isOpen()) {
+				try {
+					oneSession.getBasicRemote().sendBinary(content);
+				} catch (IOException e) {
+					e.printStackTrace();
 				}
 			}
-		} catch (IOException e) {
-			e.printStackTrace();
 		}
 	}
 

@@ -12,7 +12,7 @@ public class TextMessage extends Message implements Serializable {
 	private final String message;
 
 	public TextMessage(String msg, String from) {
-		super(from);
+		super(from, msg.hashCode());
 		this.message = msg;
 	}
 
@@ -39,8 +39,13 @@ public class TextMessage extends Message implements Serializable {
 	public String toString() {
 		String jsonString = null;
 		try {
-			jsonString = new JSONObject().put("type", "TextMessage").put("message", message).put("sender", getSender())
-					.toString();
+
+			JSONObject json = new JSONObject().put("type", "TextMessage").put("message", message);
+			JSONObject superJson = new JSONObject(super.toString());
+			for (String key : JSONObject.getNames(superJson)) {
+				json.put(key, superJson.get(key));
+			}
+			jsonString = json.toString();
 		} catch (JSONException e) {
 			e.printStackTrace();
 		}

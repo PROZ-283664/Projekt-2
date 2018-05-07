@@ -1,12 +1,9 @@
 package application;
 
-import java.io.ByteArrayOutputStream;
-
 import javax.websocket.DecodeException;
 import javax.websocket.Decoder;
 import javax.websocket.EndpointConfig;
 
-import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -32,21 +29,17 @@ public class MessageTextDecoder implements Decoder.Text<Message> {
 			} else if (type.equals("FileMessage")) {
 				String fileName = jsonObject.get("fileName").toString();
 				String sender = jsonObject.get("sender").toString();
+				Integer uID = (Integer) jsonObject.get("ID");
 
-				JSONArray fileArray = (JSONArray) jsonObject.get("file");
-				ByteArrayOutputStream fileBytes = new ByteArrayOutputStream();
-				for (Integer i = 0; i < fileArray.length(); ++i) {
-					fileBytes.write(fileArray.getInt(i));
-				}
-
-				return new FileMessage(fileName, fileBytes.toByteArray(), sender);
+				return new FileMessage(fileName, sender, uID);
+			} else {
+				throw new DecodeException(string, "[Message] Can't decode.");
 			}
 
 		} catch (JSONException e) {
 			e.printStackTrace();
 			throw new DecodeException(string, "[Message] Can't decode.");
 		}
-		return null;
 	}
 
 	@Override

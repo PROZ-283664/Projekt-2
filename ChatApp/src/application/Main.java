@@ -68,7 +68,7 @@ public class Main extends Application {
 
 		Optional<String> result = dialog.showAndWait();
 		if (result.isPresent() && result.get().length() > 0 && result.get().matches("[a-zA-Z0-9]*")) {
-			((WebSocketChatStageController) fxmlLoader.getController()).setUserName(result.get());
+			((WebSocketChatStageController) fxmlLoader.getController()).setUserInfo(result.get());
 			return 2;
 		} else if (result.isPresent()) {
 			incorrectUserName();

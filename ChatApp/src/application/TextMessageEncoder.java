@@ -11,7 +11,7 @@ public class TextMessageEncoder implements Encoder.Text<TextMessage> {
 	}
 
 	@Override
-	public void init(EndpointConfig arg0) {		
+	public void init(EndpointConfig arg0) {
 	}
 
 	@Override

@@ -3,13 +3,16 @@ package application;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
-import java.nio.file.Files;
+import java.nio.ByteBuffer;
+import java.util.HashMap;
 import java.util.Optional;
+import java.util.Random;
 
 import javax.websocket.ClientEndpoint;
 import javax.websocket.CloseReason;
 import javax.websocket.ContainerProvider;
 import javax.websocket.DeploymentException;
+import javax.websocket.EncodeException;
 import javax.websocket.OnClose;
 import javax.websocket.OnError;
 import javax.websocket.OnMessage;
@@ -54,6 +57,8 @@ public class WebSocketChatStageController {
 	private String userName = "";
 	private WebSocketClient webSocketClient;
 	private Document messagesLayout;
+	private HashMap<Integer, FileHandler> recievedFiles;
+	private Random randomGenerator;
 
 	@FXML
 	private void initialize() {
@@ -64,6 +69,8 @@ public class WebSocketChatStageController {
 				"UTF-16", Parser.xmlParser());
 		messagesView.getEngine().loadContent(messagesLayout.html());
 		messagesView.getEngine().setUserStyleSheetLocation(getClass().getResource("chat.css").toString());
+		recievedFiles = new HashMap<>();
+		randomGenerator = new Random();
 	}
 
 	@FXML
@@ -82,7 +89,21 @@ public class WebSocketChatStageController {
 		File selectedFile = fileChooser.showOpenDialog(null);
 
 		if (selectedFile != null) {
-			webSocketClient.sendMessage(selectedFile);
+			Thread thread = new Thread(new Runnable() {
+				@Override
+				public void run() {
+					Integer uID = randomGenerator.nextInt();
+					FileHandler fh = new FileHandler(selectedFile, uID);
+					ByteBuffer chunkBytes = fh.getNextChunk();
+					webSocketClient.sendMessage(fh.getFileName(), uID);
+					while (chunkBytes != null) {
+						webSocketClient
+								.sendFile(new FileBytes(uID, chunkBytes, (chunkBytes = fh.getNextChunk()) == null));
+						System.gc();
+					}
+				}
+			});
+			thread.start();
 		}
 	}
 
@@ -93,11 +114,7 @@ public class WebSocketChatStageController {
 		}
 	}
 
-	private void fileRecieved(String fileName, byte[] fileBytes) {
-
-		if (!fileRecievedConfirm(fileName))
-			return;
-
+	private File fileRecievedDialog(String fileName) {
 		FileChooser fileChooser = new FileChooser();
 		fileChooser.setInitialFileName(fileName);
 
@@ -106,13 +123,7 @@ public class WebSocketChatStageController {
 
 		File file = fileChooser.showSaveDialog(null);
 
-		if (file != null) {
-			try {
-				Files.write(file.toPath(), fileBytes);
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-		}
+		return file;
 	}
 
 	private Boolean fileRecievedConfirm(String fileName) {
@@ -134,6 +145,49 @@ public class WebSocketChatStageController {
 		}
 	}
 
+	private void addMessage(String sender, Element message) {
+		Element wrapper = messagesLayout.getElementsByTag("ul").first();
+		wrapper.appendChild(message);
+
+		messagesView.getEngine().loadContent(messagesLayout.html());
+	}
+
+	private void processFileMessage(FileMessage fMessage) {
+		String sender = fMessage.getSender();
+		Boolean isSender = sender.equals(userName);
+		Integer uID = fMessage.getUID();
+
+		recievedFiles.put(uID, new FileHandler(fMessage));
+
+		addMessage(sender, fMessage.toHTML(isSender));
+	}
+
+	private void processFile(FileBytes fileByte) {
+		Integer uID = fileByte.getUID();
+		FileHandler fh = recievedFiles.get(uID);
+		Thread thread = new Thread(new Runnable() {
+			@Override
+			public void run() {
+				fh.joinMessage(fileByte);
+			}
+		});
+		thread.start();
+		if (fileByte.isLast()) {
+			if (fileRecievedConfirm(fh.getFileName())) {
+				File file = fileRecievedDialog(fh.getFileName());
+				fh.saveFile(file.toPath());
+			}
+		}
+		System.gc();
+	}
+
+	private void processTextMessage(TextMessage tMessage) {
+		String sender = tMessage.getSender();
+		Boolean isSender = sender.equals(userName);
+
+		addMessage(sender, tMessage.toHTML(isSender));
+	}
+
 	public void closeSession(CloseReason closeReason) {
 		try {
 			webSocketClient.session.close(closeReason);
@@ -143,7 +197,7 @@ public class WebSocketChatStageController {
 
 	}
 
-	public void setUserName(String name) {
+	public void setUserInfo(String name) {
 		userName = name;
 		welcomeLabel.setText("Hello " + name + "!");
 
@@ -154,6 +208,15 @@ public class WebSocketChatStageController {
 
 	public Boolean isSessionEstablished() {
 		return webSocketClient.isSessionEstablished();
+	}
+
+	static String memory() {
+		final int unit = 1000000; // MB
+		long usedMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+		long availableMemory = Runtime.getRuntime().maxMemory() - usedMemory;
+		return "Memory: free=" + (Runtime.getRuntime().freeMemory() / unit) + " total="
+				+ (Runtime.getRuntime().totalMemory() / unit) + " max=" + (Runtime.getRuntime().maxMemory() / unit
+						+ " used=" + usedMemory / unit + " available=" + availableMemory / unit);
 	}
 
 	@ClientEndpoint(encoders = { TextMessageEncoder.class, FileMessageEncoder.class }, decoders = {
@@ -186,68 +249,53 @@ public class WebSocketChatStageController {
 
 		@OnMessage
 		public void onMessage(Message message, Session session) {
-			String sender = message.getSender();
-			Boolean isSender = sender.equals(userName);
-
+			System.out.println("tekst - ");
 			if (message instanceof TextMessage) {
-				System.out.println("Message was received");
-
 				TextMessage tMessage = (TextMessage) message;
-
-				addMessage(sender, tMessage.toHTML(isSender));
+				Platform.runLater(() -> {
+					WebSocketChatStageController.this.processTextMessage(tMessage);
+				});
 			} else if (message instanceof FileMessage) {
-				System.out.println("File was received");
-
 				FileMessage fMessage = (FileMessage) message;
-				String fileName = fMessage.getFileName();
-				byte[] fileBytes = fMessage.getFile();
-
-				addMessage(sender, fMessage.toHTML(isSender));
-
-				if (isSender)
-					return;
-				Platform.runLater(new Runnable() {
-					@Override
-					public void run() {
-						WebSocketChatStageController.this.fileRecieved(fileName, fileBytes);
-					}
+				Platform.runLater(() -> {
+					WebSocketChatStageController.this.processFileMessage(fMessage);
 				});
 			}
 		}
 
-		public void sendMessage(String message) {
-			System.out.println("Message was sent");
-
-			session.getAsyncRemote().sendObject(new TextMessage(message, userName));
+		@OnMessage
+		public void onMessage(ByteBuffer message, Session session) {
+			Platform.runLater(() -> {
+				WebSocketChatStageController.this.processFile(FileBytesDecoder.decode(message));
+			});
 		}
 
-		public void sendMessage(File file) {
+		public void sendMessage(String message) {
 			try {
-				System.out.println("File was sent");
+				session.getBasicRemote().sendObject(new TextMessage(message, userName));
+			} catch (IOException | EncodeException e) {
+				e.printStackTrace();
+			}
+		}
 
-				String fileName = file.getName();
-				byte[] fileBytes = Files.readAllBytes(file.toPath());
+		public void sendMessage(String fileName, Integer hash) {
+			try {
+				session.getBasicRemote().sendObject(new FileMessage(fileName, userName, hash));
+			} catch (IOException | EncodeException e) {
+				e.printStackTrace();
+			}
+		}
 
-				session.getAsyncRemote().sendObject(new FileMessage(fileName, fileBytes, userName));
-			} catch (IOException ex) {
-				ex.printStackTrace();
+		public void sendFile(FileBytes fileBytes) {
+			try {
+				session.getBasicRemote().sendBinary(FileBytesEncoder.encode(fileBytes));
+			} catch (IOException e) {
+				e.printStackTrace();
 			}
 		}
 
 		public Boolean isSessionEstablished() {
 			return session != null;
-		}
-
-		private void addMessage(String sender, Element message) {
-			Element wrapper = messagesLayout.getElementsByTag("ul").first();
-			wrapper.appendChild(message);
-
-			Platform.runLater(new Runnable() {
-				@Override
-				public void run() {
-					messagesView.getEngine().loadContent(messagesLayout.html());
-				}
-			});
 		}
 
 		private void connectToWebSocket() {
