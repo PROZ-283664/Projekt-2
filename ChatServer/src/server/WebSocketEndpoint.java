@@ -36,6 +36,8 @@ public class WebSocketEndpoint {
 	@OnMessage
 	public void onMessage(String message, Session session) {
 		for (Session oneSession : session.getOpenSessions()) {
+			if (session.getId() == oneSession.getId())
+				continue;
 			try {
 				if (oneSession.isOpen()) {
 					oneSession.getBasicRemote().sendText(message);
@@ -49,6 +51,8 @@ public class WebSocketEndpoint {
 	@OnMessage
 	public void onMessage(ByteBuffer content, Session session) {
 		for (Session oneSession : session.getOpenSessions()) {
+			if (session.getId() == oneSession.getId())
+				continue;
 			if (oneSession.isOpen()) {
 				try {
 					oneSession.getBasicRemote().sendBinary(content);

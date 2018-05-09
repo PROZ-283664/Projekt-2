@@ -27,10 +27,11 @@ public class TextMessage extends Message implements Serializable {
 				new File("res/harveyspecter.png").toURI().toString());
 		if (!isSender) {
 			image.attr("src", new File("res/mikeross.png").toURI().toString());
-			Element author = new Element("span").attr("class", "author").append(getSender()).appendTo(wrapper);
+			new Element("span").attr("class", "author").append(getSender()).appendTo(wrapper);
 		}
 		image.appendTo(wrapper);
-		Element content = new Element("p").append(message).appendTo(wrapper);
+		Element message_div = new Element("div").attr("class", "message").appendTo(wrapper);
+		new Element("div").attr("class", "content").append(message).appendTo(message_div);
 
 		return wrapper;
 	}

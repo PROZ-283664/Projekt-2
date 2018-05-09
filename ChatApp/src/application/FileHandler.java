@@ -4,27 +4,30 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 
 public class FileHandler {
 	final static int chunkSize = 1000000;
 	private final String fileName;
 	private final Integer uniqueID;
 	private File file;
+	private RandomAccessFile rs;
 	private Boolean isComplete;
 	private FileInputStream is;
-	private long bytesToSend;
+	private long bytesToProcess;
+	private long originalFileSize;
+	private Boolean canDownload;
 
 	FileHandler(File file, Integer uID) {
 		fileName = file.getName();
 		this.file = file;
 		uniqueID = uID;
 		isComplete = true;
-		bytesToSend = file.length();
+		originalFileSize = bytesToProcess = file.length();
 		try {
 			is = new FileInputStream(file);
 		} catch (FileNotFoundException e) {
@@ -35,13 +38,23 @@ public class FileHandler {
 	FileHandler(FileMessage message) {
 		fileName = message.getFileName();
 		isComplete = false;
-		bytesToSend = 0;
+		originalFileSize = bytesToProcess = message.getFileSize();
 		uniqueID = message.getUID();
+		canDownload = true;
 		try {
 			file = Files.createTempFile("tempfiles", ".tmp").toFile();
-			is = new FileInputStream(file);
+			file.deleteOnExit();
+
+			rs = new RandomAccessFile(file, "rw");
+			rs.setLength(originalFileSize);
+			rs.seek(0);
 		} catch (IOException e) {
-			e.printStackTrace();
+			canDownload = false;
+			try {
+				rs.close();
+			} catch (IOException e1) {
+				e1.printStackTrace();
+			}
 		}
 	}
 
@@ -52,20 +65,26 @@ public class FileHandler {
 			ByteBuffer temp = fileChunk.getFileBytes();
 			byte[] array = new byte[temp.capacity()];
 			temp.get(array);
-			Files.write(file.toPath(), array, StandardOpenOption.APPEND);
+			rs.write(array);
+			bytesToProcess -= array.length;
 			isComplete = fileChunk.isLast();
+			if (isComplete) {
+				rs.close();
+			}
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-		return fileChunk.isLast();
+		return isComplete;
 	}
 
-	public void saveFile(Path dest) {
+	public Boolean saveFile(Path dest) {
 		try {
 			Files.copy(file.toPath(), dest, StandardCopyOption.REPLACE_EXISTING);
 		} catch (IOException e) {
-			e.printStackTrace();
+			return false;
 		}
+
+		return true;
 	}
 
 	public String getFileName() {
@@ -73,13 +92,15 @@ public class FileHandler {
 	}
 
 	public ByteBuffer getNextChunk() {
-		int tempChunkSize = (int) (bytesToSend > chunkSize ? chunkSize : bytesToSend);
+		int tempChunkSize = (int) (bytesToProcess > chunkSize ? chunkSize : bytesToProcess);
 		ByteBuffer temp = ByteBuffer.allocate(tempChunkSize);
 		byte[] chunk = new byte[tempChunkSize];
 		try {
-			if (bytesToSend > 0 && is.read(chunk) != -1) {
-				bytesToSend -= tempChunkSize;
+			if (bytesToProcess > 0 && is.read(chunk) != -1) {
+				bytesToProcess -= tempChunkSize;
 				return temp.put(chunk);
+			} else {
+				is.close();
 			}
 		} catch (IOException e) {
 			e.printStackTrace();
@@ -89,5 +110,17 @@ public class FileHandler {
 
 	public Integer getHash() {
 		return uniqueID;
+	}
+
+	public float dataProcessingRatio() {
+		return (float) (originalFileSize - bytesToProcess) / (float) originalFileSize;
+	}
+
+	public Boolean canDownload() {
+		return canDownload;
+	}
+
+	public long getFileSize() {
+		return originalFileSize;
 	}
 }

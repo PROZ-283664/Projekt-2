@@ -30,8 +30,9 @@ public class MessageTextDecoder implements Decoder.Text<Message> {
 				String fileName = jsonObject.get("fileName").toString();
 				String sender = jsonObject.get("sender").toString();
 				Integer uID = (Integer) jsonObject.get("ID");
+				long fileSize = jsonObject.getLong("size");
 
-				return new FileMessage(fileName, sender, uID);
+				return new FileMessage(fileName, fileSize, sender, uID);
 			} else {
 				throw new DecodeException(string, "[Message] Can't decode.");
 			}

@@ -79,6 +79,8 @@ public class WebSocketChatStageController {
 			return;
 
 		webSocketClient.sendMessage(messageTextField.getText());
+		addMessage(new TextMessage(messageTextField.getText(), userName).toHTML(true));
+
 		messageTextField.clear();
 
 	}
@@ -89,21 +91,26 @@ public class WebSocketChatStageController {
 		File selectedFile = fileChooser.showOpenDialog(null);
 
 		if (selectedFile != null) {
+			Integer uID = randomGenerator.nextInt();
+			FileHandler fh = new FileHandler(selectedFile, uID);
 			Thread thread = new Thread(new Runnable() {
 				@Override
 				public void run() {
-					Integer uID = randomGenerator.nextInt();
-					FileHandler fh = new FileHandler(selectedFile, uID);
 					ByteBuffer chunkBytes = fh.getNextChunk();
-					webSocketClient.sendMessage(fh.getFileName(), uID);
+					webSocketClient.sendMessage(fh.getFileName(), selectedFile.length(), uID);
+
 					while (chunkBytes != null) {
 						webSocketClient
 								.sendFile(new FileBytes(uID, chunkBytes, (chunkBytes = fh.getNextChunk()) == null));
+						Platform.runLater(() -> {
+							updateFileMessageProcessing(uID.toString(), fh.dataProcessingRatio());
+						});
 						System.gc();
 					}
 				}
 			});
 			thread.start();
+			addMessage(new FileMessage(fh.getFileName(), selectedFile.length(), userName, uID).toHTML(true));
 		}
 	}
 
@@ -145,47 +152,84 @@ public class WebSocketChatStageController {
 		}
 	}
 
-	private void addMessage(String sender, Element message) {
+	private void addMessage(Element message) {
 		Element wrapper = messagesLayout.getElementsByTag("ul").first();
 		wrapper.appendChild(message);
-
 		messagesView.getEngine().loadContent(messagesLayout.html());
 	}
 
 	private void processFileMessage(FileMessage fMessage) {
-		String sender = fMessage.getSender();
-		Boolean isSender = sender.equals(userName);
 		Integer uID = fMessage.getUID();
 
 		recievedFiles.put(uID, new FileHandler(fMessage));
 
-		addMessage(sender, fMessage.toHTML(isSender));
+		addMessage(fMessage.toHTML(false));
+		if (!recievedFiles.get(uID).canDownload()) {
+			setFileMessageError(uID);
+		}
 	}
 
 	private void processFile(FileBytes fileByte) {
 		Integer uID = fileByte.getUID();
 		FileHandler fh = recievedFiles.get(uID);
-		Thread thread = new Thread(new Runnable() {
+
+		System.gc();
+		if (!fh.canDownload())
+			return;
+
+		new Thread(new Runnable() {
 			@Override
 			public void run() {
 				fh.joinMessage(fileByte);
+				Platform.runLater(() -> {
+					updateFileMessageProcessing(uID.toString(), fh.dataProcessingRatio());
+				});
 			}
-		});
-		thread.start();
+		}).start();
+
 		if (fileByte.isLast()) {
 			if (fileRecievedConfirm(fh.getFileName())) {
 				File file = fileRecievedDialog(fh.getFileName());
-				fh.saveFile(file.toPath());
+				new Thread(new Runnable() {
+					@Override
+					public void run() {
+						if (!fh.saveFile(file.toPath())) {
+							Platform.runLater(() -> {
+								showMemoryError();
+							});
+						}
+					}
+				}).start();
 			}
 		}
 		System.gc();
 	}
 
-	private void processTextMessage(TextMessage tMessage) {
-		String sender = tMessage.getSender();
-		Boolean isSender = sender.equals(userName);
+	private void showMemoryError() {
+		Alert alert = new Alert(AlertType.ERROR);
+		alert.setTitle("ChatApp");
+		alert.setHeaderText("Can't save the file");
+		alert.setContentText("There is not enough space on selected hard drive.");
 
-		addMessage(sender, tMessage.toHTML(isSender));
+		alert.showAndWait();
+	}
+
+	private void setFileMessageError(Integer uID) {
+		messagesLayout.getElementById(uID.toString()).getElementsByClass("message").attr("style",
+				"background: #ff5757; opacity: 0.35");
+		messagesView.getEngine().loadContent(messagesLayout.html());
+	}
+
+	private void updateFileMessageProcessing(String uID, float ratio) {
+		messagesLayout.getElementById(uID.toString()).getElementsByClass("message").attr("style",
+				"opacity:" + (0.35f + ratio * 0.65f));
+		messagesLayout.getElementById(uID.toString()).getElementsByClass("processing").attr("style",
+				"width:" + ratio * 100 + "%");
+		messagesView.getEngine().loadContent(messagesLayout.html());
+	}
+
+	private void processTextMessage(TextMessage tMessage) {
+		addMessage(tMessage.toHTML(false));
 	}
 
 	public void closeSession(CloseReason closeReason) {
@@ -208,15 +252,6 @@ public class WebSocketChatStageController {
 
 	public Boolean isSessionEstablished() {
 		return webSocketClient.isSessionEstablished();
-	}
-
-	static String memory() {
-		final int unit = 1000000; // MB
-		long usedMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
-		long availableMemory = Runtime.getRuntime().maxMemory() - usedMemory;
-		return "Memory: free=" + (Runtime.getRuntime().freeMemory() / unit) + " total="
-				+ (Runtime.getRuntime().totalMemory() / unit) + " max=" + (Runtime.getRuntime().maxMemory() / unit
-						+ " used=" + usedMemory / unit + " available=" + availableMemory / unit);
 	}
 
 	@ClientEndpoint(encoders = { TextMessageEncoder.class, FileMessageEncoder.class }, decoders = {
@@ -249,7 +284,6 @@ public class WebSocketChatStageController {
 
 		@OnMessage
 		public void onMessage(Message message, Session session) {
-			System.out.println("tekst - ");
 			if (message instanceof TextMessage) {
 				TextMessage tMessage = (TextMessage) message;
 				Platform.runLater(() -> {
@@ -278,9 +312,9 @@ public class WebSocketChatStageController {
 			}
 		}
 
-		public void sendMessage(String fileName, Integer hash) {
+		public void sendMessage(String fileName, long fileSize, Integer hash) {
 			try {
-				session.getBasicRemote().sendObject(new FileMessage(fileName, userName, hash));
+				session.getBasicRemote().sendObject(new FileMessage(fileName, fileSize, userName, hash));
 			} catch (IOException | EncodeException e) {
 				e.printStackTrace();
 			}
